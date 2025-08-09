@@ -156,7 +156,8 @@ func AppendCtx(parent context.Context, attr slog.Attr) context.Context {
 
 func FromRequest(r *http.Request) (*sync.WaitGroup, *http.Request) {
 	id := randSeq(24)
-	ctx := AppendCtx(r.Context(), slog.String("id", id))
+	ctx := AppendCtx(context.Background(), slog.String("id", id))
+	ctx = AppendCtx(ctx, slog.String("service", serviceName))
 
 	if r != nil {
 		ctx = AppendCtx(ctx, slog.String("query", r.URL.RawQuery))
@@ -176,10 +177,8 @@ func FromRequest(r *http.Request) (*sync.WaitGroup, *http.Request) {
 		ctx = AppendCtx(ctx, slog.String("country", r.Header.Get("CF-IPCountry")))
 		ctx = AppendCtx(ctx, slog.String("content-type", r.Header.Get("content-type")))
 		ctx = AppendCtx(ctx, slog.String("path", r.URL.Path))
+		r = r.WithContext(ctx)
 	}
-
-	ctx = AppendCtx(ctx, slog.String("service", serviceName))
-	r = r.WithContext(ctx)
 
 	return wg, r
 }
