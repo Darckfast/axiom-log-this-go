@@ -15,10 +15,10 @@ import (
 )
 
 const (
-	slogFields    string = "slog_fields"
-	MESSAGE_KEY   string = "msg"
-	LEVEL_KEY     string = "level"
-	TIMESTAMP_KEY string = "timestamp"
+	slogFields   string = "slog_fields"
+	messageKey   string = "msg"
+	levelKey     string = "level"
+	timestampKey string = "timestamp"
 )
 
 var (
@@ -50,9 +50,9 @@ func init() {
 func (h *Handler) Handle(ctx context.Context, record slog.Record) error {
 	fields := make(map[string]any, record.NumAttrs())
 
-	fields[MESSAGE_KEY] = record.Message
-	fields[LEVEL_KEY] = record.Level.String()
-	fields[TIMESTAMP_KEY] = record.Time.UTC()
+	fields[messageKey] = record.Message
+	fields[levelKey] = record.Level.String()
+	fields[timestampKey] = record.Time.UTC()
 
 	record.Attrs(func(attr slog.Attr) bool {
 		fields[attr.Key] = attr.Value.Any()
