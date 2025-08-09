@@ -31,10 +31,10 @@ var (
 )
 
 type NewHandlerArgs struct {
-	out         io.Writer
-	serviceName string
-	axiomApiKey string
-	transport   http.RoundTripper
+	Out         io.Writer
+	ServiceName string
+	AxiomApiKey string
+	Transport   http.RoundTripper
 }
 
 type Handler struct {
@@ -126,13 +126,13 @@ func NewHandler(
 ) *Handler {
 	h := &Handler{
 		startedAt: time.Now(),
-		Handler:   slog.NewJSONHandler(args.out, nil),
-		l:         log.New(args.out, "", 0),
+		Handler:   slog.NewJSONHandler(args.Out, nil),
+		l:         log.New(args.Out, "", 0),
 	}
 
-	transport = args.transport
-	axiomApiKey = args.axiomApiKey
-	serviceName = args.serviceName
+	transport = args.Transport
+	axiomApiKey = args.AxiomApiKey
+	serviceName = args.ServiceName
 	wg = &sync.WaitGroup{}
 	maxQueue = make(chan int, 5)
 
