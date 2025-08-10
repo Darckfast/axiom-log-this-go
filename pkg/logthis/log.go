@@ -154,7 +154,7 @@ func AppendCtx(parent context.Context, attr slog.Attr) context.Context {
 	return context.WithValue(parent, slogFields, v)
 }
 
-func FromRequest(r *http.Request) (*sync.WaitGroup, *http.Request) {
+func FromRequest(r *http.Request) (*sync.WaitGroup, *http.Request, context.Context) {
 	id := randSeq(24)
 	ctx := AppendCtx(context.Background(), slog.String("id", id))
 	ctx = AppendCtx(ctx, slog.String("service", serviceName))
@@ -180,5 +180,5 @@ func FromRequest(r *http.Request) (*sync.WaitGroup, *http.Request) {
 		r = r.WithContext(ctx)
 	}
 
-	return wg, r
+	return wg, r, ctx
 }
