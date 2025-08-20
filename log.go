@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"log"
 	"log/slog"
 	"math/rand"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 )
@@ -21,20 +21,11 @@ const (
 )
 
 var (
-	letters     = []rune("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-	axiomApiKey string
-	serviceName string
-	maxQueue    chan int
-	client      http.Client
-	wg          *sync.WaitGroup
+	letters  = []rune("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	maxQueue chan struct{}
+	client   *http.Client
+	wg       *sync.WaitGroup
 )
-
-type NewHandlerArgs struct {
-	Out         io.Writer
-	ServiceName string
-	AxiomApiKey string
-	HTTPClient  http.Client
-}
 
 type Handler struct {
 	startedAt time.Time
@@ -67,7 +58,9 @@ func (h *Handler) Handle(ctx context.Context, record slog.Record) error {
 	h.l.Println(string(jsonBytes))
 	body, _ := json.Marshal([]any{fields})
 
-	if axiomApiKey != "" {
+	if os.Getenv("AXIOM_API_KEY") == "" {
+		log.Println("no axiom api key found, not sending logs")
+	} else {
 		sendLogOverHTTP(ctx, &body)
 	}
 
@@ -83,7 +76,8 @@ func randSeq(n int) string {
 }
 
 func sendLogOverHTTP(ctx context.Context, body *[]byte) {
-	maxQueue <- 1
+	maxQueue <- struct{}{}
+
 	wg.Add(1)
 
 	req, _ := http.NewRequestWithContext(ctx,
@@ -92,7 +86,7 @@ func sendLogOverHTTP(ctx context.Context, body *[]byte) {
 		bytes.NewBuffer(*body),
 	)
 	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization", "Bearer "+axiomApiKey)
+	req.Header.Add("Authorization", "Bearer "+os.Getenv("AXIOM_API_KEY"))
 
 	go func() {
 		defer wg.Done()
@@ -107,24 +101,22 @@ func sendLogOverHTTP(ctx context.Context, body *[]byte) {
 	}()
 }
 
-func NewLogger(args *NewHandlerArgs) *slog.Logger {
-	return slog.New(NewHandler(args))
+func NewLogger(c *http.Client) *slog.Logger {
+	return slog.New(newHandler(c))
 }
 
-func NewHandler(
-	args *NewHandlerArgs,
+func newHandler(
+	c *http.Client,
 ) *Handler {
 	h := &Handler{
 		startedAt: time.Now(),
-		Handler:   slog.NewJSONHandler(args.Out, nil),
-		l:         log.New(args.Out, "", 0),
+		Handler:   slog.NewJSONHandler(os.Stdout, nil),
+		l:         log.New(os.Stdout, "", 0),
 	}
 
-	client = args.HTTPClient
-	axiomApiKey = args.AxiomApiKey
-	serviceName = args.ServiceName
+	client = c
 	wg = &sync.WaitGroup{}
-	maxQueue = make(chan int, 5)
+	maxQueue = make(chan struct{}, 5)
 
 	return h
 }
@@ -145,9 +137,10 @@ func AppendCtx(parent context.Context, attr slog.Attr) context.Context {
 }
 
 func FromRequest(r *http.Request) (*sync.WaitGroup, *http.Request, context.Context) {
+
 	id := randSeq(24)
 	ctx := AppendCtx(context.Background(), slog.String("id", id))
-	ctx = AppendCtx(ctx, slog.String("service", serviceName))
+	ctx = AppendCtx(ctx, slog.String("service", os.Getenv("SERVICE_NAME")))
 
 	if r != nil {
 		ctx = AppendCtx(ctx, slog.String("query", r.URL.RawQuery))
