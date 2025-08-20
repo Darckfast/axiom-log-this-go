@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"log/slog"
@@ -26,7 +25,7 @@ var (
 	axiomApiKey string
 	serviceName string
 	maxQueue    chan int
-	transport   http.RoundTripper
+	client      http.Client
 	wg          *sync.WaitGroup
 )
 
@@ -34,17 +33,13 @@ type NewHandlerArgs struct {
 	Out         io.Writer
 	ServiceName string
 	AxiomApiKey string
-	Transport   http.RoundTripper
+	HTTPClient  http.Client
 }
 
 type Handler struct {
 	startedAt time.Time
 	slog.Handler
 	l *log.Logger
-}
-
-func init() {
-	rand.New(rand.NewSource(time.Now().UnixNano()))
 }
 
 func (h *Handler) Handle(ctx context.Context, record slog.Record) error {
@@ -99,19 +94,14 @@ func sendLogOverHTTP(ctx context.Context, body *[]byte) {
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Bearer "+axiomApiKey)
 
-	client := http.Client{
-		Timeout:   1 * time.Second,
-		Transport: transport,
-	}
-
 	go func() {
 		defer wg.Done()
 		rs, err := client.Do(req)
 
 		if err != nil {
-			fmt.Println("error sending logs over http", err.Error())
+			log.Println("error sending logs over http", err.Error())
 		} else if rs.StatusCode > 399 {
-			fmt.Println("axiom returned non 200 status", rs.StatusCode)
+			log.Println("axiom returned non 200 status", rs.StatusCode)
 		}
 		<-maxQueue
 	}()
@@ -130,7 +120,7 @@ func NewHandler(
 		l:         log.New(args.Out, "", 0),
 	}
 
-	transport = args.Transport
+	client = args.HTTPClient
 	axiomApiKey = args.AxiomApiKey
 	serviceName = args.ServiceName
 	wg = &sync.WaitGroup{}
