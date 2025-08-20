@@ -20,10 +20,12 @@ const (
 	timestampKey string = "timestamp"
 )
 
+type DoReq = func(req *http.Request) (*http.Response, error)
+
 var (
 	letters  = []rune("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 	maxQueue chan struct{}
-	client   *http.Client
+	Do       DoReq
 	wg       *sync.WaitGroup
 )
 
@@ -90,7 +92,7 @@ func sendLogOverHTTP(ctx context.Context, body *[]byte) {
 
 	go func() {
 		defer wg.Done()
-		rs, err := client.Do(req)
+		rs, err := Do(req)
 
 		if err != nil {
 			log.Println("error sending logs over http", err.Error())
@@ -101,24 +103,18 @@ func sendLogOverHTTP(ctx context.Context, body *[]byte) {
 	}()
 }
 
-func NewLogger(c *http.Client) *slog.Logger {
-	return slog.New(newHandler(c))
-}
-
-func newHandler(
-	c *http.Client,
-) *Handler {
+func NewLogger(c DoReq) *slog.Logger {
 	h := &Handler{
 		startedAt: time.Now(),
 		Handler:   slog.NewJSONHandler(os.Stdout, nil),
 		l:         log.New(os.Stdout, "", 0),
 	}
 
-	client = c
+	Do = c
 	wg = &sync.WaitGroup{}
 	maxQueue = make(chan struct{}, 5)
 
-	return h
+	return slog.New(h)
 }
 
 func AppendCtx(parent context.Context, attr slog.Attr) context.Context {
@@ -137,7 +133,6 @@ func AppendCtx(parent context.Context, attr slog.Attr) context.Context {
 }
 
 func FromRequest(r *http.Request) (*sync.WaitGroup, *http.Request, context.Context) {
-
 	id := randSeq(24)
 	ctx := AppendCtx(context.Background(), slog.String("id", id))
 	ctx = AppendCtx(ctx, slog.String("service", os.Getenv("SERVICE_NAME")))
