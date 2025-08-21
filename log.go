@@ -17,7 +17,7 @@ const (
 	slogFields   string = "slog_fields"
 	messageKey   string = "msg"
 	levelKey     string = "level"
-	timestampKey string = "timestamp"
+	timestampKey string = "_time"
 )
 
 type DoReq = func(req *http.Request) (*http.Response, error)
