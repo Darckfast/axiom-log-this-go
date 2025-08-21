@@ -23,10 +23,9 @@ const (
 type DoReq = func(req *http.Request) (*http.Response, error)
 
 var (
-	letters  = []rune("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-	maxQueue chan struct{}
-	Do       DoReq
-	wg       *sync.WaitGroup
+	letters = []rune("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	Do      DoReq
+	wg      = &sync.WaitGroup{}
 )
 
 type Handler struct {
@@ -40,7 +39,7 @@ func (h *Handler) Handle(ctx context.Context, record slog.Record) error {
 
 	fields[messageKey] = record.Message
 	fields[levelKey] = record.Level.String()
-	fields[timestampKey] = record.Time.UTC()
+	fields[timestampKey] = record.Time.UnixMicro()
 
 	record.Attrs(func(attr slog.Attr) bool {
 		fields[attr.Key] = attr.Value.Any()
@@ -53,8 +52,11 @@ func (h *Handler) Handle(ctx context.Context, record slog.Record) error {
 		}
 	}
 
-	duration := time.Since(h.startedAt).Nanoseconds()
-	fields["duration"] = duration
+	startedAt, ok := fields["startedAt"].(time.Time)
+	if ok {
+		duration := time.Since(startedAt).Nanoseconds()
+		fields["duration"] = duration
+	}
 
 	jsonBytes, _ := json.Marshal(fields)
 	h.l.Println(string(jsonBytes))
@@ -78,8 +80,6 @@ func randSeq(n int) string {
 }
 
 func sendLogOverHTTP(ctx context.Context, body *[]byte) {
-	maxQueue <- struct{}{}
-
 	wg.Add(1)
 
 	req, _ := http.NewRequestWithContext(ctx,
@@ -99,21 +99,17 @@ func sendLogOverHTTP(ctx context.Context, body *[]byte) {
 		} else if rs.StatusCode > 399 {
 			log.Println("axiom returned non 200 status", rs.StatusCode)
 		}
-		<-maxQueue
 	}()
 }
 
 func NewLogger(c DoReq) *slog.Logger {
 	h := &Handler{
 		startedAt: time.Now(),
-		Handler:   slog.NewJSONHandler(os.Stdout, nil),
+		Handler:   slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{}),
 		l:         log.New(os.Stdout, "", 0),
 	}
 
 	Do = c
-	wg = &sync.WaitGroup{}
-	maxQueue = make(chan struct{}, 5)
-
 	return slog.New(h)
 }
 
@@ -132,10 +128,15 @@ func AppendCtx(parent context.Context, attr slog.Attr) context.Context {
 	return context.WithValue(parent, slogFields, v)
 }
 
-func FromRequest(r *http.Request) (*sync.WaitGroup, *http.Request, context.Context) {
+func Flush() {
+	wg.Wait()
+}
+
+func FromRequest(r *http.Request) (*http.Request, context.Context) {
 	id := randSeq(24)
 	ctx := AppendCtx(context.Background(), slog.String("id", id))
 	ctx = AppendCtx(ctx, slog.String("service", os.Getenv("SERVICE_NAME")))
+	ctx = AppendCtx(ctx, slog.Time("startedAt", time.Now()))
 
 	if r != nil {
 		ctx = AppendCtx(ctx, slog.String("query", r.URL.RawQuery))
@@ -158,5 +159,5 @@ func FromRequest(r *http.Request) (*sync.WaitGroup, *http.Request, context.Conte
 		r = r.WithContext(ctx)
 	}
 
-	return wg, r, ctx
+	return r, ctx
 }
